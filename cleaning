@@ -1,0 +1,210 @@
+# STUDY 2 
+# Cleaning  
+# script order 1
+# July 20 2026
+#
+# Author:   Anya Rozin
+# Purpose:  Cleaning CSV's from priming (open sesame)
+# Note: 
+
+# clean environment
+rm(list = ls())
+
+library(dplyr)
+
+# load the directory 
+CSV_directory_ <- "/Users/music/Desktop/code/priming/data_in/study2"
+
+# -------------------------------
+# Study 2   
+
+# load csv's 
+files_ <- list.files(
+  CSV_directory_,
+  pattern = "\\.csv$",
+  full.names = TRUE
+)
+
+all_data_ <- list()
+length(files_)
+
+# start the loop
+for (i in seq_along(files_)) {
+  
+  file_path <- files_[i]
+  
+  # Try reading the CSV normally
+  df <- read.csv(
+    file_path,
+    stringsAsFactors = FALSE,
+    header = TRUE,
+    sep = ","
+  )
+  
+  # If only one column, try semicolon
+  if (ncol(df) == 1) {
+    df <- read.csv(
+      file_path,
+      stringsAsFactors = FALSE,
+      header = TRUE,
+      sep = ";"
+    )
+  }
+  
+  # If still one column, try tab
+  if (ncol(df) == 1) {
+    df <- read.csv(
+      file_path,
+      stringsAsFactors = FALSE,
+      header = TRUE,
+      sep = "\t"
+    )
+  }
+  
+  # check all column names exist
+  
+  required_cols_ <- c(
+    "bloc_nr",
+    "list_type",
+    "prime_type",
+    "response_correct",
+    "sentence_name",
+    "sentence_type",
+    "subject_nr",
+    "total_responses"
+  )
+  
+  if (!all(required_cols_ %in% colnames(df))) {
+    warning("Skipping file (missing columns): ", basename(file_path))
+    next
+  }
+  
+  # rename columns
+  df <- df %>%
+    rename(
+      block = bloc_nr,
+      item = sentence_name,
+      ID = subject_nr,
+      response_order = total_responses,
+      date = datetime,
+      response_type = response_keyboard_sentence,
+      response_time = response_time_keyboard_sentence
+    )
+  
+  # order
+  df <- df %>%
+    arrange(ID, block, response_order)
+  
+  # response order
+  df <- df %>%
+    group_by(ID, block) %>%
+    mutate(
+      block_order = row_number()
+    ) %>%
+    ungroup()
+  
+  # types of variables 
+  df <- df %>%
+    mutate(
+      ID = factor(ID),
+      list_type = factor(list_type),
+      prime_type = factor(prime_type),
+      sentence_type = factor(sentence_type),
+      
+      block = as.numeric(block),
+      block_order = as.numeric(block_order),
+      response_order = as.numeric(response_order),
+      response_correct = as.numeric(response_correct)
+    )
+  
+  # re-order everything 
+  df <- df %>%
+    relocate(
+      ID,
+      date,
+      title,
+      list_type,
+      block,
+      block_order,
+      response_order,
+      prime_type,
+      prime_name,
+      sentence_type,
+      item,
+      response_type,
+      response_time,
+      response_correct
+    )
+  
+  # change the date 
+  df <- df %>%
+    mutate(
+      date = as.Date(
+        date,
+        format = "%a %b %d %H:%M:%S %Y"
+      )
+    )
+  
+  all_data_[[i]] <- df
+  
+}
+
+# merge all data together into one 
+data_ <- bind_rows(all_data_)
+
+# change ID numbers (e.g.,from 1 to 01)
+data_ <- data_ %>%
+  mutate(
+    ID = sprintf("%02d", as.integer(as.character(ID)))
+  )
+
+# sanity check
+
+empty_rows <- data_ %>%
+  filter(if_all(everything(), ~ is.na(.) | . == ""))
+
+nrow(empty_rows)
+
+
+
+#--------------------------------------------------------------------
+# Recalculate response correctness.
+# OpenSesame treated uppercase responses ("L"/"S") as incorrect,
+# although they represent the same keypresses as lowercase ("l"/"s").
+# Correctness is therefore recomputed from sentence_type and response_type.
+#---
+data_ <- data_ %>%
+  mutate(
+    # standardize uppercase and lowercase responses
+    response_type = tolower(response_type),
+    
+    # recalculate correctness from the actual response
+    response_correct_new = case_when(
+      sentence_type == "gram"   & response_type == "l" ~ 1,
+      sentence_type == "ungram" & response_type == "s" ~ 1,
+      TRUE ~ 0
+    )
+  )
+
+data_ <- data_ %>%
+  select(-response_correct) %>%
+  rename(response_correct = response_correct_new)
+
+#rename prime type
+data_ <- data_ %>%
+  mutate(
+    prime_type = recode(
+      prime_type,
+      "PopPrime" = "Reg",
+      "Texture" = "Irreg"
+    )
+  )
+
+#-----------------------------------------------------------------#
+
+#save it 
+write.csv(
+  data_,
+  "/Users/music/Desktop/code/priming/data_out/study2/data_clean.csv",
+  row.names = FALSE
+)
