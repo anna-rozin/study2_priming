@@ -1,0 +1,161 @@
+# STUDY 2
+# Signal detection analysis
+# script order 2
+# July 20 2026
+#
+# Author: Anya Rozin
+# Purpose: Calculate hits, false alarms, hits - false alarms,
+#          and d-prime by prime condition
+
+# clean environment
+rm(list = ls())
+
+library(dplyr)
+
+# load cleaned Study 2 data
+data_study2 <- read.csv(
+  "/Users/music/Desktop/code/priming/data_out/study2/data_clean.csv",
+  stringsAsFactors = FALSE
+)
+
+#--------------------------------------------------
+# Accuracy
+# Proportion correct for each participant,
+# prime condition, and sentence type
+#--------------------------------------------------
+
+Accuracy <- data_study2 %>%
+  group_by(ID, prime_type, sentence_type) %>%
+  summarise(
+    Accuracy = mean(response_correct),
+    n = n(),  # should equal 12 in every condition
+    .groups = "drop"
+  )
+
+
+#--------------------------------------------------
+# Signal Detection Theory
+# Count each response type
+#--------------------------------------------------
+
+SDT <- data_study2 %>%
+  group_by(ID, prime_type) %>%
+  summarise(
+    Hit_Count = sum(
+      sentence_type == "ungram" &
+        response_type == "s"
+    ),
+    
+    Miss_Count = sum(
+      sentence_type == "ungram" &
+        response_type == "l"
+    ),
+    
+    FA_Count = sum(
+      sentence_type == "gram" &
+        response_type == "s"
+    ),
+    
+    CR_Count = sum(
+      sentence_type == "gram" &
+        response_type == "l"
+    ),
+    
+    .groups = "drop"
+  )
+
+
+#--------------------------------------------------
+# Calculate hit and false-alarm rates
+#--------------------------------------------------
+
+SDT <- SDT %>%
+  mutate(
+    Hit_Rate = Hit_Count / (Hit_Count + Miss_Count),
+    
+    FA_Rate = FA_Count / (FA_Count + CR_Count)
+  )
+
+
+#--------------------------------------------------
+# Correct extreme rates
+# Uses the 0.01 / 0.99 correction
+#--------------------------------------------------
+
+SDT <- SDT %>%
+  mutate(
+    Hit_Rate_Corrected = case_when(
+      Hit_Rate == 0 ~ 0.01,
+      Hit_Rate == 1 ~ 0.99,
+      TRUE ~ Hit_Rate
+    ),
+    
+    FA_Rate_Corrected = case_when(
+      FA_Rate == 0 ~ 0.01,
+      FA_Rate == 1 ~ 0.99,
+      TRUE ~ FA_Rate
+    )
+  )
+
+
+#--------------------------------------------------
+# Convert rates to z-scores
+# Calculate d-prime and response bias
+#--------------------------------------------------
+
+SDT <- SDT %>%
+  mutate(
+    Z_Hit = qnorm(Hit_Rate_Corrected),
+    
+    Z_FA = qnorm(FA_Rate_Corrected),
+    
+    d_prime = Z_Hit - Z_FA,
+    
+    c_responsebias = -(Z_Hit + Z_FA) / 2
+  )
+
+
+#--------------------------------------------------
+# change to wide format 
+# create table with everything needed
+
+
+SDT_Wide <- SDT %>%
+  mutate(
+    H_minus_FA = Hit_Rate - FA_Rate
+  ) %>%
+  select(
+    ID,
+    prime_type,
+    Hit_Rate,
+    FA_Rate,
+    H_minus_FA,
+    d_prime
+  ) %>%
+  pivot_wider(
+    names_from = prime_type,
+    values_from = c(Hit_Rate, FA_Rate, H_minus_FA, d_prime),
+    names_glue = "{.value}_{prime_type}"
+  ) %>%
+  mutate(across(-ID, ~ round(., 3))) %>%
+  rename(
+    hit_reg = Hit_Rate_Reg,
+    fa_reg = FA_Rate_Reg,
+    h_fa_reg = H_minus_FA_Reg,
+    dprime_reg = d_prime_Reg,
+    hit_irreg = Hit_Rate_Irreg,
+    fa_irreg = FA_Rate_Irreg,
+    h_fa_irreg = H_minus_FA_Irreg,
+    dprime_irreg = d_prime_Irreg
+  )
+
+
+# -------------------------------------------------------
+# save SDT wide
+
+#save it 
+write.csv(
+  SDT_Wide,
+  "/Users/music/Desktop/code/priming/data_out/study2/data_SDT.csv",
+  row.names = FALSE
+)
