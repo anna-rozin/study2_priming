@@ -1,10 +1,9 @@
 # STUDY 2
 # Signal detection analysis
-# script order 2
 # July 20 2026
 #
 # Author: Anya Rozin
-# Purpose: Calculate hits, false alarms, hits - false alarms,
+# Purpose: Calculate accuracy, hits, false alarms, hits - false alarms,
 #          and d-prime by prime condition
 
 # clean environment
@@ -12,16 +11,22 @@ rm(list = ls())
 
 library(dplyr)
 
-# load cleaned Study 2 data
+# load cleaned Study 2 data (merged all participants in df)
 data_study2 <- read.csv(
   "/Users/music/Desktop/code/priming/data_out/study2/data_clean.csv",
   stringsAsFactors = FALSE
 )
 
 #--------------------------------------------------
-# Accuracy
-# Proportion correct for each participant,
-# prime condition, and sentence type
+# ACCURACY 
+#--------------------------------------------------
+# Calculate the proportion of correct responses for each participant,
+# separately for each prime condition and sentence type.
+# Because response_correct is coded as 1 = correct and 0 = incorrect,
+# its mean is equivalent to the proportion of correct responses.
+#
+# The variable n counts the number of trials contributing to each
+# accuracy score and should equal 12 for every condition.
 #--------------------------------------------------
 
 Accuracy <- data_study2 %>%
@@ -32,11 +37,52 @@ Accuracy <- data_study2 %>%
     .groups = "drop"
   )
 
+#--------------------------------------------------
+# Format accuracy scores for comparison in Excel
+#--------------------------------------------------
+
+# Reshape the accuracy table so that each participant occupies one row
+# and the four experimental conditions occupy separate columns.
+# The columns are ordered to match the Excel spreadsheet.
+#
+# Decimal points are converted to commas because the Excel sheet uses
+# Accuracy_excel is intended only for validation against Excel; 
+# the unrounded Accuracy table should be used
+# for all analyses.
+#------------------------------------------------------
+
+Accuracy_excel <- Accuracy %>%
+  select(-n) %>%
+  tidyr::pivot_wider(
+    names_from = c(prime_type, sentence_type),
+    values_from = Accuracy
+  ) %>%
+  select(
+    ID,
+    Reg_ungram,
+    Reg_gram,
+    Irreg_ungram,
+    Irreg_gram
+  ) %>%
+  mutate(across(
+    -ID,
+    ~ gsub("\\.", ",", format(round(.x, 3), nsmall = 3))
+  ))
 
 #--------------------------------------------------
-# Signal Detection Theory
-# Count each response type
+# Signal Detection Theory (SDT)
+# Count the four response categories
 #--------------------------------------------------
+
+# Calculate the number of hits, misses, false alarms, and correct
+# rejections for each participant and prime condition.
+#
+# In this task, ungrammatical sentences are treated as the "signal":
+# - Hit: correctly identifies an ungrammatical sentence
+# - Miss: incorrectly judges an ungrammatical sentence as grammatical
+# - False alarm: incorrectly judges a grammatical sentence as ungrammatical
+# - Correct rejection: correctly identifies a grammatical sentence
+#--------------------------------------------------------------
 
 SDT <- data_study2 %>%
   group_by(ID, prime_type) %>%
@@ -66,8 +112,13 @@ SDT <- data_study2 %>%
 
 
 #--------------------------------------------------
-# Calculate hit and false-alarm rates
+# Calculate HIT and FALSE ALARM rates
 #--------------------------------------------------
+
+# Calculate the proportion of signal trials correctly identified (hit rate)
+# and the proportion of noise trials incorrectly identified as signal
+# (false alarm rate) for each participant and prime condition.
+#-------------------------------------------------------------------
 
 SDT <- SDT %>%
   mutate(
@@ -78,9 +129,13 @@ SDT <- SDT %>%
 
 
 #--------------------------------------------------
-# Correct extreme rates
-# Uses the 0.01 / 0.99 correction
+# Correct extreme hit and false alarm rates
 #--------------------------------------------------
+
+# Replace hit and false alarm rates of 0 and 1 with 0.01 and 0.99,
+# respectively. This prevents infinite z-scores when calculating
+# d′ and response bias
+#-------------------------------------------------------------
 
 SDT <- SDT %>%
   mutate(
@@ -99,9 +154,15 @@ SDT <- SDT %>%
 
 
 #--------------------------------------------------
-# Convert rates to z-scores
-# Calculate d-prime and response bias
+# Calculate Signal Detection Theory measures
 #--------------------------------------------------
+
+# Convert the corrected hit and false alarm rates to z-scores and
+# calculate:
+# - d′: perceptual sensitivity (ability to distinguish grammatical
+#   from ungrammatical sentences)
+# - c: response bias (tendency to favour one response over the other)
+#---------------------------------------------------------------------
 
 SDT <- SDT %>%
   mutate(
@@ -114,10 +175,18 @@ SDT <- SDT %>%
     c_responsebias = -(Z_Hit + Z_FA) / 2
   )
 
-
 #--------------------------------------------------
-# change to wide format 
-# create table with everything needed
+# Reshape SDT measures to wide format
+#--------------------------------------------------
+# Calculate the difference between the hit rate and false alarm rate
+# for each participant and prime condition.
+
+# Create a summary table containing all SDT measures for each participant.
+# The data are reshaped so that each participant occupies one row and
+# separate columns are created for the Reg and Irreg prime conditions.
+#
+# Values are rounded to three decimal places for easier inspection
+# and the columns are renamed for clarity.
 
 
 SDT_Wide <- SDT %>%
@@ -129,26 +198,30 @@ SDT_Wide <- SDT %>%
     prime_type,
     Hit_Rate,
     FA_Rate,
+    Hit_Rate_Corrected,
+    FA_Rate_Corrected,
+    Z_Hit,
+    Z_FA,
     H_minus_FA,
-    d_prime
+    d_prime,
+    c_responsebias
   ) %>%
   pivot_wider(
     names_from = prime_type,
-    values_from = c(Hit_Rate, FA_Rate, H_minus_FA, d_prime),
+    values_from = c(
+      Hit_Rate,
+      FA_Rate,
+      Hit_Rate_Corrected,
+      FA_Rate_Corrected,
+      Z_Hit,
+      Z_FA,
+      H_minus_FA,
+      d_prime,
+      c_responsebias
+    ),
     names_glue = "{.value}_{prime_type}"
   ) %>%
-  mutate(across(-ID, ~ round(., 3))) %>%
-  rename(
-    hit_reg = Hit_Rate_Reg,
-    fa_reg = FA_Rate_Reg,
-    h_fa_reg = H_minus_FA_Reg,
-    dprime_reg = d_prime_Reg,
-    hit_irreg = Hit_Rate_Irreg,
-    fa_irreg = FA_Rate_Irreg,
-    h_fa_irreg = H_minus_FA_Irreg,
-    dprime_irreg = d_prime_Irreg
-  )
-
+  mutate(across(-ID, ~ round(.x, 3)))
 
 # -------------------------------------------------------
 # save SDT wide
